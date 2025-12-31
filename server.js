@@ -56,9 +56,31 @@ const downloadImage = async (imageUrl) => {
 // Hàm cắt ảnh theo grid
 const splitImage = async (imageBuffer, gridX, gridY, expirationMs = 24 * 60 * 60 * 1000) => {
   try {
-    const metadata = await sharp(imageBuffer).metadata();
+    const sharpInstance = sharp(imageBuffer);
+    const metadata = await sharpInstance.metadata();
     const width = metadata.width;
     const height = metadata.height;
+    const format = metadata.format; // jpeg, png, webp, gif, svg, tiff, avif, heic, raw, etc.
+    
+    // Xác định extension dựa trên format
+    const formatMap = {
+      'jpeg': 'jpg',
+      'jpg': 'jpg',
+      'png': 'png',
+      'webp': 'webp',
+      'gif': 'gif',
+      'svg': 'svg',
+      'tiff': 'tiff',
+      'tif': 'tiff',
+      'avif': 'avif',
+      'heic': 'heic',
+      'heif': 'heic',
+      'raw': 'raw',
+      'bmp': 'bmp',
+      'ico': 'ico'
+    };
+    
+    const extension = formatMap[format?.toLowerCase()] || 'jpg';
     
     const tileWidth = Math.floor(width / gridX);
     const tileHeight = Math.floor(height / gridY);
@@ -74,36 +96,87 @@ const splitImage = async (imageBuffer, gridX, gridY, expirationMs = 24 * 60 * 60
         const left = x * tileWidth;
         const top = y * tileHeight;
         
-        const tileBuffer = await sharp(imageBuffer)
-          .extract({
-            left,
-            top,
-            width: tileWidth,
-            height: tileHeight
-          })
-          .toBuffer();
+        // Tạo sharp instance mới từ buffer gốc cho mỗi tile
+        let tileSharp = sharp(imageBuffer).extract({
+          left,
+          top,
+          width: tileWidth,
+          height: tileHeight
+        });
         
-        const filename = `${sessionId}_${x}_${y}.jpg`;
+        const filename = `${sessionId}_${x}_${y}.${extension}`;
         const filepath = path.join(OUTPUT_DIR, filename);
         
-        await sharp(tileBuffer).jpeg({ quality: 90 }).toFile(filepath);
+        // Xử lý từng định dạng với options phù hợp
+        switch (format?.toLowerCase()) {
+          case 'jpeg':
+          case 'jpg':
+            await tileSharp.jpeg({ quality: 90 }).toFile(filepath);
+            break;
+          case 'png':
+            await tileSharp.png({ compressionLevel: 9 }).toFile(filepath);
+            break;
+          case 'webp':
+            await tileSharp.webp({ quality: 90 }).toFile(filepath);
+            break;
+          case 'gif':
+            await tileSharp.gif().toFile(filepath);
+            break;
+          case 'tiff':
+          case 'tif':
+            await tileSharp.tiff({ compression: 'lzw' }).toFile(filepath);
+            break;
+          case 'avif':
+            await tileSharp.avif({ quality: 90 }).toFile(filepath);
+            break;
+          case 'heic':
+          case 'heif':
+            await tileSharp.heif({ quality: 90 }).toFile(filepath);
+            break;
+          case 'bmp':
+            await tileSharp.bmp().toFile(filepath);
+            break;
+          default:
+            // Mặc định chuyển sang JPEG nếu format không được hỗ trợ trực tiếp
+            const jpgFilename = filename.replace(/\.\w+$/, '.jpg');
+            const jpgFilepath = path.join(OUTPUT_DIR, jpgFilename);
+            await tileSharp.jpeg({ quality: 90 }).toFile(jpgFilepath);
+            
+            // Lưu thông tin về thời gian tạo để xóa sau
+            const jpgInfoPath = path.join(OUTPUT_DIR, `${jpgFilename}.info`);
+            await fs.writeFile(jpgInfoPath, JSON.stringify({
+              createdAt,
+              expiresAt,
+              format: 'jpeg'
+            }));
+            
+            tiles.push({
+              filename: jpgFilename,
+              url: `/images/${jpgFilename}`,
+              position: { x, y },
+              format: 'jpeg'
+            });
+            continue;
+        }
         
         // Lưu thông tin về thời gian tạo để xóa sau
         const infoPath = path.join(OUTPUT_DIR, `${filename}.info`);
         await fs.writeFile(infoPath, JSON.stringify({
           createdAt,
-          expiresAt
+          expiresAt,
+          format: format || 'unknown'
         }));
         
         tiles.push({
           filename,
           url: `/images/${filename}`,
-          position: { x, y }
+          position: { x, y },
+          format: format || 'unknown'
         });
       }
     }
     
-    return { tiles, sessionId };
+    return { tiles, sessionId, originalFormat: format };
   } catch (error) {
     throw new Error(`Lỗi khi cắt ảnh: ${error.message}`);
   }
@@ -142,7 +215,7 @@ app.post('/api/split-image', handleAllFormats, async (req, res) => {
     const imageBuffer = await downloadImage(imageUrl);
     
     // Cắt ảnh với thời gian hết hạn
-    const { tiles, sessionId } = await splitImage(imageBuffer, gridX, gridY, expirationMs);
+    const { tiles, sessionId, originalFormat } = await splitImage(imageBuffer, gridX, gridY, expirationMs);
     
     res.json({
       success: true,
@@ -150,6 +223,7 @@ app.post('/api/split-image', handleAllFormats, async (req, res) => {
       grid: `${gridX}x${gridY}`,
       tilesCount: tiles.length,
       expiresInDays: expirationDays,
+      originalFormat: originalFormat || 'unknown',
       tiles,
       baseUrl: req.protocol + '://' + req.get('host')
     });
