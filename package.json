@@ -1,0 +1,31 @@
+{
+  "name": "image-splitter",
+  "version": "1.0.0",
+  "description": "tool cắt ảnh",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lich1101/Image-Splitter.git"
+  },
+  "keywords": [
+    "Image",
+    "Splitter"
+  ],
+  "author": "dangbinh1101",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lich1101/Image-Splitter/issues"
+  },
+  "homepage": "https://github.com/lich1101/Image-Splitter#readme",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sharp": "^0.33.0",
+    "axios": "^1.6.2",
+    "node-cron": "^3.0.3",
+    "multer": "^1.4.5-lts.1"
+  }
+}
